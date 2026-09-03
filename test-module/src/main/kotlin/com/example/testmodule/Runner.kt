@@ -4,6 +4,8 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.OffsetDateTime
 
 
 
@@ -77,7 +79,8 @@ data class Candle(
     var longSetup: Boolean = false,
     var shortSetup: Boolean = false,
     var longExit: Boolean = false,
-    var shortExit: Boolean = false
+    var shortExit: Boolean = false,
+    var rsi: Double = 0.0
 )
 
 object IndicatorCalculator {
@@ -97,6 +100,7 @@ object IndicatorCalculator {
         val ema18Values = calculateEMA(closes, config.emaSlowPeriod)
         val atrValues = calculateATR(highs, lows, closes, config.atrPeriod)
         val adxValues = calculateADX(highs, lows, closes, config.adxPeriod)
+        val rsiValues = calculateRSI(closes, 14)
 
         for (i in candles.indices) {
             val c = candles[i]
@@ -105,6 +109,7 @@ object IndicatorCalculator {
             c.ema18 = ema18Values[i]
             c.atr = atrValues[i]
             c.adx = adxValues[i]
+            c.rsi = rsiValues[i]
 
             c.candleBody = abs(c.close - c.open)
             c.candleRange = abs(c.high - c.low)
@@ -243,6 +248,38 @@ object IndicatorCalculator {
         }
         return result
     }
+
+    fun calculateRSI(values: List<Double>, period: Int): DoubleArray {
+        val result = DoubleArray(values.size)
+        if (values.size <= period) return result
+
+        var avgGain = 0.0
+        var avgLoss = 0.0
+
+        for (i in 1..period) {
+            val change = values[i] - values[i - 1]
+            if (change > 0) avgGain += change else avgLoss -= change
+        }
+
+        avgGain /= period
+        avgLoss /= period
+
+        if (avgLoss == 0.0) result[period] = 100.0
+        else result[period] = 100.0 - (100.0 / (1.0 + avgGain / avgLoss))
+
+        for (i in period + 1 until values.size) {
+            val change = values[i] - values[i - 1]
+            val gain = if (change > 0) change else 0.0
+            val loss = if (change < 0) -change else 0.0
+
+            avgGain = (avgGain * (period - 1) + gain) / period
+            avgLoss = (avgLoss * (period - 1) + loss) / period
+
+            if (avgLoss == 0.0) result[i] = 100.0
+            else result[i] = 100.0 - (100.0 / (1.0 + avgGain / avgLoss))
+        }
+        return result
+    }
 }
 
 class EMATrendSignalEngine(val config: EMATrendConfig = EMATrendConfig()) {
@@ -304,6 +341,154 @@ class EMATrendSignalEngine(val config: EMATrendConfig = EMATrendConfig()) {
     }
 }
 
+enum class PivotType { LOW, HIGH }
+data class Pivot(val index: Int, val price: Double, val rsi: Double, val type: PivotType)
+
+class RSIDivergenceSignalEngine(val pivotLookback: Int = 15) {
+    private val pivots = mutableListOf<Pivot>()
+
+    fun evaluateCandles(candles: List<Candle>): Action {
+        if (candles.size < pivotLookback * 2 + 1) return Action.HOLD
+
+        val i = candles.size - 1 - pivotLookback
+        val current = candles[i]
+
+        // Detect Swing Low
+        var isSwingLow = true
+        for (j in 1..pivotLookback) {
+            if (i - j < 0 || i + j >= candles.size) {
+                isSwingLow = false
+                break
+            }
+            if (candles[i].low > candles[i - j].low || candles[i].low > candles[i + j].low) {
+                isSwingLow = false
+                break
+            }
+        }
+
+        if (isSwingLow) {
+            val newPivot = Pivot(i, current.low, current.rsi, PivotType.LOW)
+            if (pivots.isEmpty() || pivots.last().index != i) {
+                pivots.add(newPivot)
+                if (pivots.size > 10) pivots.removeAt(0)
+                
+                // Check Bullish Divergence
+                val lastLows = pivots.filter { it.type == PivotType.LOW }
+                if (lastLows.size >= 2) {
+                    val p2 = lastLows.last()
+                    val p1 = lastLows[lastLows.size - 2]
+                    
+                    if (p2.price < p1.price && p2.rsi > p1.rsi && p2.rsi < 40) {
+                        return Action.ENTER_LONG
+                    }
+                }
+            }
+        }
+
+        var isSwingHigh = true
+        for (j in 1..pivotLookback) {
+            if (i - j < 0 || i + j >= candles.size) {
+                isSwingHigh = false
+                break
+            }
+            if (candles[i].high < candles[i - j].high || candles[i].high < candles[i + j].high) {
+                isSwingHigh = false
+                break
+            }
+        }
+
+        if (isSwingHigh) {
+            val newPivot = Pivot(i, current.high, current.rsi, PivotType.HIGH)
+            if (pivots.isEmpty() || pivots.last().index != i) {
+                pivots.add(newPivot)
+                if (pivots.size > 10) pivots.removeAt(0)
+
+                // Check Bearish Divergence
+                val lastHighs = pivots.filter { it.type == PivotType.HIGH }
+                if (lastHighs.size >= 2) {
+                    val p2 = lastHighs.last()
+                    val p1 = lastHighs[lastHighs.size - 2]
+
+                    if (p2.price > p1.price && p2.rsi < p1.rsi && p2.rsi > 60) {
+                        return Action.ENTER_SHORT
+                    }
+                }
+            }
+        }
+
+        return Action.HOLD
+    }
+}
+
+class NiftyRSIDivergenceStrategyRunner(
+    private val startingCapital: Double = 600000.0,
+    private val lotSize: Int = 65,
+    private val lots: Int = 1,
+    private val squareOffTime: LocalTime = LocalTime.of(15, 20),
+    private val brokerage: Double = 40.0
+) {
+    private val positionSize = lotSize * lots
+    private var equity = startingCapital
+    private var position: Position? = null
+    private val engine = RSIDivergenceSignalEngine()
+
+    fun runBacktest(candles: List<Candle>) {
+        val processedCandles = mutableListOf<Candle>()
+        val indicatorCandles = IndicatorCalculator.buildEmaTrendWithIndicators(candles)
+
+        for (i in indicatorCandles.indices) {
+            val candle = indicatorCandles[i]
+            val dateTime = Instant.ofEpochMilli(candle.timestamp).atZone(ZoneId.systemDefault())
+            val barTime = dateTime.toLocalTime()
+
+            if (barTime >= squareOffTime) {
+                if (position != null) {
+                    closePosition(candle.close)
+                }
+                continue
+            }
+
+            processedCandles.add(candle)
+            if (processedCandles.size < 50) continue
+
+            val action = engine.evaluateCandles(processedCandles)
+
+            if (position != null) {
+                // Exit logic: RSI crossing back or hitting extreme
+                val currentRsi = candle.rsi
+                if (position!!.direction == "LONG" && (currentRsi > 70 || action == Action.ENTER_SHORT)) {
+                    closePosition(candle.close)
+                } else if (position!!.direction == "SHORT" && (currentRsi < 30 || action == Action.ENTER_LONG)) {
+                    closePosition(candle.close)
+                }
+                continue
+            }
+
+            if (action == Action.ENTER_LONG) {
+                position = Position("LONG", candle.close, positionSize)
+                println("ENTER LONG at ${candle.close} on $dateTime")
+            } else if (action == Action.ENTER_SHORT) {
+                position = Position("SHORT", candle.close, positionSize)
+                println("ENTER SHORT at ${candle.close} on $dateTime")
+            }
+        }
+        println("=== RSI Divergence Strategy Summary ===")
+        println("Final Equity: $equity")
+    }
+
+    private fun closePosition(exitPrice: Double) {
+        val pos = position ?: return
+        val pnl = if (pos.direction == "LONG") {
+            (exitPrice - pos.entryPrice) * pos.size
+        } else {
+            (pos.entryPrice - exitPrice) * pos.size
+        }
+        equity += (pnl - brokerage)
+        println("EXIT ${pos.direction} at $exitPrice | PnL: $pnl")
+        position = null
+    }
+}
+
 
 
 
@@ -316,7 +501,7 @@ data class Position(
 class NiftyEmaTrendStrategyRunner(
     private val startingCapital: Double = 600000.0,
     private val lotSize: Int = 65,
-    private val lots: Int = 3,
+    private val lots: Int = 1,
     private val marginRequirement: Double = 0.15,
     private val autoAdjustMargin: Boolean = true,
     private val minMarginFloor: Double = 0.02,
@@ -479,18 +664,28 @@ fun loadCsv(fileName: String): List<Candle> {
     val inputStream = Thread.currentThread().contextClassLoader.getResourceAsStream(fileName)
         ?: return emptyList()
 
+    val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ssXXX")
+
     return inputStream.bufferedReader().useLines { lines ->
         lines.drop(1).mapNotNull { line ->
             val parts = line.split(",")
             if (parts.size < 5) null
             else {
-                Candle(
-                    timestamp = parts[0].toLongOrNull() ?: 0L,
-                    open = parts[1].toDoubleOrNull() ?: 0.0,
-                    high = parts[2].toDoubleOrNull() ?: 0.0,
-                    low = parts[3].toDoubleOrNull() ?: 0.0,
-                    close = parts[4].toDoubleOrNull() ?: 0.0
-                )
+                try {
+                    // CSV Columns: Close(0), High(1), Low(2), Open(3), timestamp(4), Volume(5)
+                    val timestampStr = parts[4]
+                    val instant = OffsetDateTime.parse(timestampStr, formatter).toInstant()
+                    
+                    Candle(
+                        timestamp = instant.toEpochMilli(),
+                        open = parts[3].toDoubleOrNull() ?: 0.0,
+                        high = parts[1].toDoubleOrNull() ?: 0.0,
+                        low = parts[2].toDoubleOrNull() ?: 0.0,
+                        close = parts[0].toDoubleOrNull() ?: 0.0
+                    )
+                } catch (_: Exception) {
+                    null
+                }
             }
         }.toList()
     }
@@ -498,6 +693,11 @@ fun loadCsv(fileName: String): List<Candle> {
 
 fun main() {
     val candles = loadCsv("a.csv")
+    /*println("--- Running EMA Trend Strategy ---")
     val runner = NiftyEmaTrendStrategyRunner()
-    runner.runBacktest(candles)
+    runner.runBacktest(candles)*/
+
+    println("\n--- Running RSI Divergence Strategy ---")
+    val rsiRunner = NiftyRSIDivergenceStrategyRunner()
+    rsiRunner.runBacktest(candles)
 }
