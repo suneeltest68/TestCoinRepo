@@ -344,7 +344,7 @@ class EMATrendSignalEngine(val config: EMATrendConfig = EMATrendConfig()) {
 enum class PivotType { LOW, HIGH }
 data class Pivot(val index: Int, val price: Double, val rsi: Double, val type: PivotType)
 
-class RSIDivergenceSignalEngine(val pivotLookback: Int = 15) {
+class RSIDivergenceSignalEngine(val pivotLookback: Int = 60) {
     private val pivots = mutableListOf<Pivot>()
 
     fun evaluateCandles(candles: List<Candle>): Action {
@@ -421,7 +421,7 @@ class RSIDivergenceSignalEngine(val pivotLookback: Int = 15) {
 }
 
 class NiftyRSIDivergenceStrategyRunner(
-    private val startingCapital: Double = 600000.0,
+    private val startingCapital: Double = 60000.0,
     private val lotSize: Int = 65,
     private val lots: Int = 1,
     private val squareOffTime: LocalTime = LocalTime.of(15, 20),
@@ -431,6 +431,9 @@ class NiftyRSIDivergenceStrategyRunner(
     private var equity = startingCapital
     private var position: Position? = null
     private val engine = RSIDivergenceSignalEngine()
+    
+    private val tradeHistory = mutableListOf<TradeRecord>()
+    private val equityCurve = mutableListOf<Double>()
 
     fun runBacktest(candles: List<Candle>) {
         val processedCandles = mutableListOf<Candle>()
@@ -443,13 +446,17 @@ class NiftyRSIDivergenceStrategyRunner(
 
             if (barTime >= squareOffTime) {
                 if (position != null) {
-                    closePosition(candle.close)
+                    closePosition(candle.close, dateTime.toString())
                 }
+                equityCurve.add(equity)
                 continue
             }
 
             processedCandles.add(candle)
-            if (processedCandles.size < 50) continue
+            if (processedCandles.size < 50) {
+                equityCurve.add(equity)
+                continue
+            }
 
             val action = engine.evaluateCandles(processedCandles)
 
@@ -457,35 +464,82 @@ class NiftyRSIDivergenceStrategyRunner(
                 // Exit logic: RSI crossing back or hitting extreme
                 val currentRsi = candle.rsi
                 if (position!!.direction == "LONG" && (currentRsi > 70 || action == Action.ENTER_SHORT)) {
-                    closePosition(candle.close)
+                    closePosition(candle.close, dateTime.toString())
                 } else if (position!!.direction == "SHORT" && (currentRsi < 30 || action == Action.ENTER_LONG)) {
-                    closePosition(candle.close)
+                    closePosition(candle.close, dateTime.toString())
                 }
+                equityCurve.add(equity)
                 continue
             }
 
             if (action == Action.ENTER_LONG) {
-                position = Position("LONG", candle.close, positionSize)
+                position = Position("LONG", candle.close, positionSize, dateTime.toString())
                 println("ENTER LONG at ${candle.close} on $dateTime")
             } else if (action == Action.ENTER_SHORT) {
-                position = Position("SHORT", candle.close, positionSize)
+                position = Position("SHORT", candle.close, positionSize, dateTime.toString())
                 println("ENTER SHORT at ${candle.close} on $dateTime")
             }
+            
+            equityCurve.add(equity)
         }
-        println("=== RSI Divergence Strategy Summary ===")
-        println("Final Equity: $equity")
+        printDetailedSummary()
     }
 
-    private fun closePosition(exitPrice: Double) {
+    private fun closePosition(exitPrice: Double, exitTime: String) {
         val pos = position ?: return
         val pnl = if (pos.direction == "LONG") {
             (exitPrice - pos.entryPrice) * pos.size
         } else {
             (pos.entryPrice - exitPrice) * pos.size
         }
-        equity += (pnl - brokerage)
-        println("EXIT ${pos.direction} at $exitPrice | PnL: $pnl")
+        val netPnl = pnl - brokerage
+        equity += netPnl
+        
+        tradeHistory.add(TradeRecord(pos.direction, pos.entryTime, pos.entryPrice, exitTime, exitPrice, netPnl, equity))
+        
+        println("EXIT ${pos.direction} at $exitPrice | PnL: $netPnl | Equity: $equity")
         position = null
+    }
+
+    private fun printDetailedSummary() {
+        println("\n=== Daily Trade List ===")
+        println("%-25s | %-10s | %-10s | %-25s | %-10s | %-10s | %-10s".format("Entry Time", "Type", "Entry", "Exit Time", "Exit", "PnL", "Equity"))
+        tradeHistory.forEach { t ->
+            println("%-25s | %-10s | %-10.2f | %-25s | %-10.2f | %-10.2f | %-10.2f".format(t.entryTime, t.direction, t.entryPrice, t.exitTime, t.exitPrice, t.pnl, t.equity))
+        }
+
+        val totalPnl = tradeHistory.sumOf { it.pnl }
+        val winTrades = tradeHistory.count { it.pnl > 0 }
+        val lossTrades = tradeHistory.count { it.pnl <= 0 }
+        
+        // Drawdown calculation
+        var maxEquity = startingCapital
+        var maxDrawdown = 0.0
+        var maxDrawdownPct = 0.0
+        
+        equityCurve.forEach { e ->
+            if (e > maxEquity) maxEquity = e
+            val dd = maxEquity - e
+            val ddPct = if (maxEquity > 0) (dd / maxEquity) * 100.0 else 0.0
+            if (dd > maxDrawdown) maxDrawdown = dd
+            if (ddPct > maxDrawdownPct) maxDrawdownPct = ddPct
+        }
+
+        println("\n=== RSI Divergence Strategy Statistics ===")
+        println("Starting Capital: $startingCapital")
+        println("Final Equity: $equity")
+        println("Total Net PnL: $totalPnl")
+        println("Total Trades: ${tradeHistory.size}")
+        println("Win Trades: $winTrades | Loss Trades: $lossTrades")
+        println("Win Rate: ${if (tradeHistory.isNotEmpty()) (winTrades.toDouble() / tradeHistory.size * 100.0) else 0.0}%")
+        println("Max Drawdown: ${"%.2f".format(maxDrawdown)} (${"%.2f".format(maxDrawdownPct)}%)")
+        
+        println("\n=== Equity Curve (Samples) ===")
+        val step = maxOf(1, equityCurve.size / 20)
+        for (i in equityCurve.indices step step) {
+            println("Step $i: ${"%.2f".format(equityCurve[i])}")
+        }
+        println("Final: ${"%.2f".format(equityCurve.last())}")
     }
 }
 
@@ -495,7 +549,18 @@ class NiftyRSIDivergenceStrategyRunner(
 data class Position(
     var direction: String,
     var entryPrice: Double,
-    var size: Int
+    var size: Int,
+    var entryTime: String = ""
+)
+
+data class TradeRecord(
+    val direction: String,
+    val entryTime: String,
+    val entryPrice: Double,
+    val exitTime: String,
+    val exitPrice: Double,
+    val pnl: Double,
+    val equity: Double
 )
 
 class NiftyEmaTrendStrategyRunner(
