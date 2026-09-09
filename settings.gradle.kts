@@ -23,5 +23,5 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "RunKoltin"
-include(":app")
+// include(":app")
 include(":test-module")

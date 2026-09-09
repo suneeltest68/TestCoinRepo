@@ -8,11 +8,12 @@ kotlin {
 }
 
 application {
-    mainClass.set("com.example.testmodule.RunnerKt")
+    mainClass.set("com.example.testmodule.SimpleRunnerKt")
 }
 
 dependencies {
     implementation(kotlin("stdlib"))
+    implementation(libs.kotlinx.coroutines)
 
     // New libraries
     implementation(libs.gson)
