@@ -37,6 +37,15 @@ dependencies {
     implementation(libs.androidx.constraintlayout)
     implementation(libs.androidx.core.ktx)
     implementation(libs.material)
+
+    // New libraries
+    implementation(libs.gson)
+    implementation(libs.jackson.databind)
+    implementation(libs.ta4j.core)
+    implementation(libs.commons.math3)
+    implementation(libs.kotlin.dataframe)
+    implementation(libs.xchart)
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.junit)

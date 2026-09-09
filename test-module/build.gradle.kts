@@ -13,6 +13,14 @@ application {
 
 dependencies {
     implementation(kotlin("stdlib"))
+
+    // New libraries
+    implementation(libs.gson)
+    implementation(libs.jackson.databind)
+    implementation(libs.ta4j.core)
+    implementation(libs.commons.math3)
+    implementation(libs.kotlin.dataframe)
+    implementation(libs.xchart)
 }
 
 tasks.jar {
