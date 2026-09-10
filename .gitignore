@@ -13,3 +13,7 @@ build/
 .externalNativeBuild
 .cxx
 local.properties
+pdp.html
+optimization_results.csv
+test-module/build/
+app/build/
