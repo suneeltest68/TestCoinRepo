@@ -13,6 +13,7 @@ import java.util.logging.Logger
 import kotlinx.coroutines.*
 import com.sun.net.httpserver.HttpServer
 import java.net.InetSocketAddress
+import org.openqa.selenium.JavascriptExecutor
 
 fun main() = runBlocking {
     // 1. Start a dummy Web Server to keep Render happy
@@ -45,19 +46,23 @@ fun main() = runBlocking {
     }
 
     val options = ChromeOptions().apply {
-        addArguments("--headless=new") // Use the newer headless mode
+        addArguments("--headless=new") 
         addArguments("--disable-gpu")
         addArguments("--no-sandbox")
         addArguments("--disable-dev-shm-usage")
         addArguments("--window-size=1920,1080")
         
-        // --- Enhanced Stealth / Anti-Detection ---
+        // --- Maximum Stealth / Anti-Detection ---
         addArguments("--disable-blink-features=AutomationControlled")
         setExperimentalOption("excludeSwitches", listOf("enable-automation"))
         setExperimentalOption("useAutomationExtension", false)
-        addArguments("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36")
+        
+        // Use a very recent desktop user agent
+        addArguments("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
+        
         addArguments("--blink-settings=imagesEnabled=false")
         addArguments("--lang=en-US,en;q=0.9")
+        addArguments("--sec-ch-ua-platform=Windows")
     }
 
     // Monitoring loop using Coroutines
@@ -65,24 +70,29 @@ fun main() = runBlocking {
         var driver: WebDriver? = null
         try {
             driver = ChromeDriver(options)
-            println("[${LocalDateTime.now()}] Checking Myntra...")
             
-            // Set page load timeout to be safe
+            // Execute script to hide 'webdriver' flag
+            if (driver is JavascriptExecutor) {
+                driver.executeScript("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+            }
+
+            println("[${LocalDateTime.now()}] Checking Myntra...")
             driver.manage().timeouts().pageLoadTimeout(Duration.ofSeconds(30))
             driver.get(url)
 
             val wait = WebDriverWait(driver, Duration.ofSeconds(20))
             
             try {
-                // Wait for either the container OR the title to be available
                 wait.until { d -> 
                     d.findElements(By.className("pdp-offers-container")).isNotEmpty() || 
                     d.findElements(By.className("pdp-title")).isNotEmpty()
                 }
             } catch (waitError: Exception) {
-                println("⚠️ Wait timed out. Browser Title: ${driver.title}")
-                if (driver.pageSource?.contains("Access Denied", ignoreCase = true) == true) {
-                    println("❌ Access Denied by Myntra. Possible bot detection.")
+                val currentTitle = driver.title ?: ""
+                println("⚠️ Wait timed out. Browser Title: $currentTitle")
+                if (currentTitle.contains("Maintenance", ignoreCase = true) || 
+                    driver.pageSource?.contains("Access Denied", ignoreCase = true) == true) {
+                    println("❌ Blocked by Myntra (Data Center IP detection).")
                 }
             }
 
@@ -92,8 +102,8 @@ fun main() = runBlocking {
             var found = false
             for (code in targetCoupons) {
                 if (pageSource?.contains(code, ignoreCase = true) == true) {
-                    println("🔥 ALERT: Found '$code'!")
-                    bot.sendMessage("🔥 COUPON ALERT: Found '$code' on Myntra!\nURL: $url")
+                    println(" ALERT: Found '$code")
+                    bot.sendMessage("COUPON ALERT: Found '$code' on Myntra!\nURL: $url")
                     found = true
                 }
             }
