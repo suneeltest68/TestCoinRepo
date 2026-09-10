@@ -30,7 +30,6 @@ fun main() = runBlocking {
     val telegramToken = System.getenv("TELEGRAM_BOT_TOKEN") ?: ""
     val telegramChatId = System.getenv("TELEGRAM_CHAT_ID") ?: ""
     val bot = TelegramBot(telegramToken, telegramChatId)
-
     val styleId = "23250698"
     val url = "https://www.myntra.com/gold-coin/bhima/bhima-floral-24k-999-purity-gold-bar-10-gram/$styleId/buy"
 
@@ -113,7 +112,10 @@ fun main() = runBlocking {
             }
 
         } catch (e: Exception) {
-            println("❌ Monitoring Error: ${e.message}")
+            val errorMsg = "❌ Scraper Error: ${e.message}"
+            println(errorMsg)
+            e.printStackTrace()
+            bot.sendMessage(errorMsg + "\nStacktrace: " + e.stackTrace.take(5).joinToString("\n"))
         } finally {
             try {
                 driver?.quit()
