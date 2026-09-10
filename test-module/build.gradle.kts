@@ -8,7 +8,7 @@ kotlin {
 }
 
 application {
-    mainClass.set("com.example.testmodule.SimpleRunnerKt")
+    mainClass.set("com.example.testmodule.HelloWorldKt")
 }
 
 dependencies {
@@ -26,7 +26,7 @@ dependencies {
 
 tasks.jar {
     manifest {
-        attributes["Main-Class"] = "com.example.testmodule.RunnerKt"
+        attributes["Main-Class"] = "com.example.testmodule.HelloWorldKt"
     }
     from(configurations.runtimeClasspath.get().map { if (it.isDirectory) it else zipTree(it) })
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
