@@ -8,7 +8,7 @@ kotlin {
 }
 
 application {
-    mainClass.set("com.example.testmodule.HelloWorldKt")
+    mainClass.set("com.example.testmodule.ScraperKt")
 }
 
 dependencies {
@@ -22,11 +22,16 @@ dependencies {
     implementation(libs.commons.math3)
     implementation(libs.kotlin.dataframe)
     implementation(libs.xchart)
+    implementation(libs.jsoup)
+    implementation(libs.selenium.java)
+    implementation(libs.webdrivermanager)
+    implementation(libs.slf4j.simple)
+    implementation(libs.okhttp)
 }
 
 tasks.jar {
     manifest {
-        attributes["Main-Class"] = "com.example.testmodule.HelloWorldKt"
+        attributes["Main-Class"] = "com.example.testmodule.ScraperKt"
     }
     from(configurations.runtimeClasspath.get().map { if (it.isDirectory) it else zipTree(it) })
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE

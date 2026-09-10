@@ -16,6 +16,11 @@ commonsMath = "3.6.1"
 dataframe = "0.15.0"
 xchart = "4.0.4"
 coroutines = "1.11.0"
+jsoup = "1.18.1"
+selenium = "4.24.0"
+webdrivermanager = "5.9.2"
+slf4j = "2.0.16"
+okhttp = "4.12.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -33,6 +38,11 @@ commons-math3 = { group = "org.apache.commons", name = "commons-math3", version.
 kotlin-dataframe = { group = "org.jetbrains.kotlinx", name = "dataframe", version.ref = "dataframe" }
 xchart = { group = "org.knowm.xchart", name = "xchart", version.ref = "xchart" }
 kotlinx-coroutines = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "coroutines" }
+jsoup = { group = "org.jsoup", name = "jsoup", version.ref = "jsoup" }
+selenium-java = { group = "org.seleniumhq.selenium", name = "selenium-java", version.ref = "selenium" }
+webdrivermanager = { group = "io.github.bonigarcia", name = "webdrivermanager", version.ref = "webdrivermanager" }
+slf4j-simple = { group = "org.slf4j", name = "slf4j-simple", version.ref = "slf4j" }
+okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
