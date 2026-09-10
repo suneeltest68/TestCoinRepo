@@ -11,9 +11,14 @@ import java.time.LocalDateTime
 import java.util.logging.Level
 import java.util.logging.Logger
 import kotlinx.coroutines.*
+import com.sun.net.httpserver.HttpServer
+import java.net.InetSocketAddress
 
 fun main() = runBlocking {
-    // 1. Production Logging & Silence
+    // 1. Start a dummy Web Server to keep Render happy
+    startDummyWebServer()
+
+    // 2. Silence ALL internal logs
     System.setProperty("webdriver.chrome.silentOutput", "true")
     System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", "error")
     val rootLogger = Logger.getLogger("")
@@ -93,6 +98,24 @@ fun main() = runBlocking {
         }
 
         println("Waiting for 1 minute...")
-        delay(60000) // Suspending delay (non-blocking)
+        delay(60000) 
     }
+}
+
+/**
+ * Tiny web server to prevent Render from sleeping
+ */
+fun startDummyWebServer() {
+    val port = System.getenv("PORT")?.toInt() ?: 8080
+    val server = HttpServer.create(InetSocketAddress(port), 0)
+    server.createContext("/") { exchange ->
+        val response = "Bot is running!"
+        exchange.sendResponseHeaders(200, response.length.toLong())
+        val os = exchange.responseBody
+        os.write(response.toByteArray())
+        os.close()
+    }
+    server.executor = null
+    server.start()
+    println("Dummy Web Server started on port $port")
 }
