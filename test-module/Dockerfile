@@ -1,5 +1,5 @@
 # --- Stage 1: Build the Application ---
-FROM openjdk:17-jdk-slim AS builder
+FROM eclipse-temurin:17-jdk AS builder
 
 WORKDIR /app
 # Copy the entire project to the builder stage
@@ -8,7 +8,7 @@ COPY . .
 RUN ./gradlew :test-module:clean :test-module:jar
 
 # --- Stage 2: Production Environment ---
-FROM openjdk:17-jdk-slim
+FROM eclipse-temurin:17-jdk
 
 # Install Chrome and dependencies for Selenium
 RUN apt-get update && apt-get install -y \
