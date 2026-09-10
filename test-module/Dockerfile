@@ -10,23 +10,17 @@ RUN ./gradlew :test-module:clean :test-module:jar
 # --- Stage 2: Production Environment ---
 FROM eclipse-temurin:17-jre
 
-# Install dependencies and Google Chrome
+# Install dependencies and Google Chrome using the modern keyring method
 RUN apt-get update && apt-get install -y \
     wget \
-    curl \
     gnupg \
     ca-certificates \
-    libnss3 \
-    libgconf-2-4 \
-    libxss1 \
-    libasound2 \
-    fonts-liberation \
-    libatk-bridge2.0-0 \
-    libgtk-3-0 \
     --no-install-recommends \
-    && wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
-    && apt-get install -y ./google-chrome-stable_current_amd64.deb \
-    && rm google-chrome-stable_current_amd64.deb \
+    && wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | gpg --dearmor > /usr/share/keyrings/google-chrome.gpg \
+    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
+    && apt-get update && apt-get install -y \
+    google-chrome-stable \
+    --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
