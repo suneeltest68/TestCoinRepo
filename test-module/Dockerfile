@@ -2,15 +2,28 @@
 FROM eclipse-temurin:17-jdk AS builder
 
 WORKDIR /app
-# Copy the entire project
+
+# Copy gradle files first to cache the gradle executable and dependencies
+COPY gradlew .
+COPY gradle gradle
+COPY build.gradle.kts .
+COPY settings.gradle.kts .
+COPY gradle.properties .
+COPY test-module/build.gradle.kts test-module/
+
+# Pre-download dependencies (this layer will be cached)
+RUN ./gradlew :test-module:dependencies --no-daemon || true
+
+# Now copy the actual source code
 COPY . .
+
 # Build the fat jar
-RUN ./gradlew :test-module:clean :test-module:jar
+RUN ./gradlew :test-module:clean :test-module:jar --no-daemon
 
 # --- Stage 2: Production Environment ---
 FROM eclipse-temurin:17-jre
 
-# Install dependencies and Google Chrome using the modern keyring method
+# Install dependencies and Google Chrome (This layer is usually cached by Render)
 RUN apt-get update && apt-get install -y \
     wget \
     gnupg \
